@@ -1,0 +1,71 @@
+{
+  "run": {
+    "seed": 52313,
+    "output_dir": "outputs/_staging_textonly",
+    "tf32": true,
+    "amp": "off",
+    "config_name": "paper"
+  },
+  "data": {
+    "root": "data",
+    "entity_set": "new",
+    "train_year": 2019,
+    "max_context_length": 128,
+    "max_cand_length": 128,
+    "candidate_include_title": true,
+    "debug_n": 1024,
+    "valid_n": 256
+  },
+  "model": {
+    "bert_model": "google/bert_uncased_L-8_H-512_A-8",
+    "lowercase": true
+  },
+  "graph": {
+    "enabled": false,
+    "source": "per_year",
+    "mode": "joint",
+    "hidden_dim": 64,
+    "feat_drop": 0.3,
+    "attn_drop": 0.5,
+    "tau": 0.8,
+    "neighbor_threshold": 8,
+    "isolated_fallback": "self",
+    "feature_negatives": "all",
+    "relation_extra_negatives": 0
+  },
+  "fusion": {
+    "enabled": false,
+    "projection": "learned",
+    "alignment": "qid",
+    "weight": 45,
+    "source": "mean"
+  },
+  "loss": {
+    "a": 1.0,
+    "b": 1.0,
+    "c": 1.0
+  },
+  "train": {
+    "batch_size": 16,
+    "eval_batch_size": 16,
+    "learning_rate": 1e-05,
+    "graph_learning_rate": 0.0008,
+    "num_epochs": 12,
+    "warmup_proportion": 0.1,
+    "max_grad_norm": 1.0,
+    "type_optimization": "all_encoder_layers",
+    "shuffle": false,
+    "print_interval": 10,
+    "eval_interval": 100,
+    "reseed_each_batch": false,
+    "early_stopping": {
+      "enabled": true,
+      "patience": 3
+    }
+  },
+  "eval": {
+    "batch_size": 256,
+    "encode_batch_size": 128,
+    "top_k": 64
+  }
+}
