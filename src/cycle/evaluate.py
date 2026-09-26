@@ -14,7 +14,7 @@ import torch
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-from cycle.config import Config
+from cycle.config import Config, apply_overrides
 from cycle.data.documents import load_candidate_pool
 from cycle.data.graphs import _read_qid_mapping, load_year_graph
 from cycle.data.mentions import load_mention_dataset
@@ -53,10 +53,11 @@ def load_candidate_enhancer(cfg, ckpt, device):
         projection=cfg.fusion.projection, alignment=cfg.fusion.alignment,
         mode="candidate",
     ).to(device)
-    # bert_dim from the checkpoint, not hardcoded
+    # bert_dim from the checkpoint, not hardcoded; bias presence from checkpoint
     fusion.linear = torch.nn.Linear(
         ckpt["fusion"]["linear.weight"].shape[1],
         ckpt["fusion"]["linear.weight"].shape[0],
+        bias="linear.bias" in ckpt["fusion"],
     ).to(device)
     fusion.load_state_dict(ckpt["fusion"])
     fusion.eval()
@@ -131,11 +132,16 @@ def main():
     parser.add_argument("--split", default="test", choices=["test", "validation"])
     parser.add_argument("--limit", type=int, default=None,
                         help="cap mentions per year (smoke tests)")
+    parser.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                        help="override an existing config_used.json key for this "
+                             "evaluation only, e.g. eval.batch_size=64")
     args = parser.parse_args()
 
     with open(os.path.join(args.run_dir, "config_used.json"), encoding="utf-8") as f:
-        cfg = Config.wrap(json.load(f))
+        cfg = Config.wrap(apply_overrides(json.load(f), args.set, must_exist=True))
     logger = get_logger(args.run_dir)
+    if args.set:
+        logger.info(f"evaluation overrides: {args.set}")
     configure_tf32(cfg.run.tf32)
     set_all_seeds(cfg.run.seed)
     device = resolve_device()

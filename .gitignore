@@ -7,7 +7,7 @@ data/processed/
 data/*.7z
 data/_extract/
 outputs/
-models/
+/models/
 *.t7
 
 # Python

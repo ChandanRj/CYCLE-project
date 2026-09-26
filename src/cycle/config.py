@@ -28,6 +28,15 @@ def load_config(path, overrides=None):
     """Load a YAML config file and apply ``key.subkey=value`` overrides."""
     with open(path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
+    return Config.wrap(apply_overrides(cfg, overrides))
+
+
+def apply_overrides(cfg, overrides, must_exist=False):
+    """Return a copy of plain-dict ``cfg`` with ``key.subkey=value`` overrides.
+
+    With ``must_exist``, an override naming a key absent from ``cfg`` raises
+    instead of silently creating it (guards against typos like model.x vs graph.x).
+    """
     cfg = copy.deepcopy(cfg)
     for item in overrides or []:
         key, _, raw = item.partition("=")
@@ -46,7 +55,13 @@ def load_config(path, overrides=None):
                     pass
         node = cfg
         parts = key.split(".")
+        if must_exist:
+            probe = cfg
+            for p in parts:
+                if not isinstance(probe, dict) or p not in probe:
+                    raise KeyError(f"Override key not in config: {key}")
+                probe = probe[p]
         for p in parts[:-1]:
             node = node.setdefault(p, {})
         node[parts[-1]] = value
-    return Config.wrap(cfg)
+    return cfg
