@@ -74,8 +74,13 @@ def load_candidate_enhancer(cfg, ckpt, device):
     return (z, fusion), train_map
 
 
-def enhance_pool(pool_encs, enhancer, train_map, cfg, year, split, device):
-    """pool_encs + P z for pool entities present in the train-year graph."""
+def enhance_pool(pool_encs, enhancer, train_map, cfg, year, split, device,
+                 unmapped="zero"):
+    """pool_encs + P z for pool entities present in the train-year graph.
+    unmapped="zero": entities with no train-year node get no adjustment
+    (original behaviour; out of distribution, since every training
+    candidate has one). "mean": they get the mean adjustment of mapped
+    ones (P is linear, so P·mean(z) = mean(P·z))."""
     (z, fusion) = enhancer
     test_map = _read_qid_mapping(os.path.join(
         cfg.data.root, "raw", "relationship", str(year),
@@ -89,6 +94,11 @@ def enhance_pool(pool_encs, enhancer, train_map, cfg, year, split, device):
             idx[pool_i] = node
             present[pool_i] = 1.0
     with torch.no_grad():
+        if unmapped == "mean" and 0 < present.sum() < len(present):
+            z_pool = z[idx.to(device)]
+            mask = present.to(device).bool()
+            z_pool[~mask] = z_pool[mask].mean(dim=0)
+            return fusion.enhance_candidates(pool_encs, z_pool), int(present.sum().item())
         return fusion.enhance_candidates(
             pool_encs, z[idx.to(device)], present.to(device)
         ), int(present.sum().item())
@@ -135,6 +145,9 @@ def main():
     parser.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                         help="override an existing config_used.json key for this "
                              "evaluation only, e.g. eval.batch_size=64")
+    parser.add_argument("--unmapped-adjustment", default="zero", choices=["zero", "mean"],
+                        help="candidate mode: adjustment for pool entities absent "
+                             "from the train-year graph")
     args = parser.parse_args()
 
     with open(os.path.join(args.run_dir, "config_used.json"), encoding="utf-8") as f:
@@ -166,7 +179,8 @@ def main():
         )
         if enhancer is not None:
             pool_encs, n_present = enhance_pool(
-                pool_encs, enhancer, train_map, cfg, year, args.split, device
+                pool_encs, enhancer, train_map, cfg, year, args.split, device,
+                args.unmapped_adjustment,
             )
             logger.info(f"candidate enhancement: {n_present}/{num_entities} "
                         f"pool entities mapped to train-year graph nodes")
@@ -188,6 +202,7 @@ def main():
             "seed": cfg.run.seed,
             "test_year": int(year),
             "split": args.split,
+            "unmapped_adjustment": args.unmapped_adjustment if enhancer is not None else None,
             "num_mentions": total,
             "num_entities": num_entities,
             **res,
