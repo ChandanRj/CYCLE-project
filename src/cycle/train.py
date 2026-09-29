@@ -25,6 +25,7 @@ from cycle.models.biencoder import BiEncoder
 from cycle.models.fusion import ScoreFusion
 from cycle.models.graph_paper import PaperGraphModule
 from cycle.models.heco import HeCo, pretrain_heco
+from cycle.models.loss_weighting import UncertaintyWeighting
 from cycle.optim import build_optimizer, build_scheduler
 from cycle.utils import (MetricsWriter, atomic_torch_save, configure_tf32,
                          get_logger, oom_safe_map, resolve_device,
@@ -275,6 +276,21 @@ def main():
         biencoder, cfg.train.type_optimization, cfg.train.learning_rate,
         extra_modules=extra_modules, extra_lr=cfg.train.graph_learning_rate,
     )
+    # gradient clipping covers the model groups only, so the learned weights'
+    # own gradients never change the model's clip factor
+    clip_params = [p for g_ in optimizer.param_groups for p in g_["params"]]
+    weighting = cfg.loss.get("weighting", "fixed")
+    if weighting not in ("fixed", "learned"):
+        raise ValueError(f"loss.weighting must be fixed or learned, got {weighting!r}")
+    learned = None
+    if weighting == "learned":
+        # added before the scheduler so LambdaLR covers its group
+        names = ["e", "f", "r"] if graph_module is not None else ["e"]
+        learned = UncertaintyWeighting(
+            names, [float(cfg.loss[{"e": "a", "f": "b", "r": "c"}[n]]) for n in names]
+        ).to(device)
+        optimizer.add_param_group({"params": list(learned.parameters()),
+                                   "weight_decay": 0.0, "lr": cfg.loss.weighting_lr})
     steps_per_epoch = max(1, len(train_data) // cfg.train.batch_size)
     total_steps = steps_per_epoch * cfg.train.num_epochs
     scheduler = build_scheduler(optimizer, total_steps, cfg.train.warmup_proportion)
@@ -295,6 +311,12 @@ def main():
     for epoch in range(cfg.train.num_epochs):
         if joint:
             graph_module.resample_neighbors(graph, device)
+            if learned is not None and (graph_module._pos_idx is None
+                                        or not graph_module._pos_mask.any()
+                                        or graph_module.relation_extra_negatives == 0):
+                raise ValueError("loss.weighting=learned needs a non-degenerate L_f (cross-year "
+                                 "positives and graph.relation_extra_negatives > 0); otherwise "
+                                 "L_f = 0 and log sigma_f diverges")
         pool_cached = None
         if pool_enabled:
             # full-pool negatives: cache the whole training-year entity pool
@@ -330,7 +352,7 @@ def main():
                 )
                 target = torch.arange(scores.size(0), device=device)
                 loss_e = F.cross_entropy(scores, target)
-            loss = loss_weights.a * loss_e
+            loss = loss_weights.a * loss_e if learned is None else 0.0
             extra = {}
             if pool_cached is not None:
                 # retrieval objective over the whole entity pool (cached
@@ -343,15 +365,22 @@ def main():
             if joint:
                 loss_f = graph_module.loss_f(z_r, z_f, graph)
                 loss_r = graph_module.loss_r(z_r, z_f, graph)
-                loss = loss + loss_weights.b * loss_f + loss_weights.c * loss_r
+                if learned is None:
+                    loss = loss + loss_weights.b * loss_f + loss_weights.c * loss_r
                 extra = {**extra, "loss_f": loss_f.item(), "loss_r": loss_r.item()}
+            loss_reg = None
+            if learned is not None:
+                # `loss` is 0 or the fixed-weight pool term here; `loss` stays the
+                # weighted sum (comparable to fixed runs), log sigma is logged apart
+                weighted, loss_reg = learned(
+                    {"e": loss_e.float(), **({"f": loss_f, "r": loss_r} if joint else {})})
+                loss = loss + weighted
+                extra = {**extra, "loss_reg": loss_reg.item(),
+                         **{f"w_{n}": w for n, w in learned.weights().items()}}
 
-            scaler.scale(loss).backward()
+            scaler.scale(loss if loss_reg is None else loss + loss_reg).backward()
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(
-                [p for g_ in optimizer.param_groups for p in g_["params"]],
-                cfg.train.max_grad_norm,
-            )
+            torch.nn.utils.clip_grad_norm_(clip_params, cfg.train.max_grad_norm)
             scaler.step(optimizer)
             scaler.update()
             scheduler.step()
@@ -381,6 +410,8 @@ def main():
         metrics.write({"type": "epoch_end", "epoch": epoch,
                        "mean_loss": epoch_loss / max(1, steps_per_epoch),
                        "valid_inbatch_accuracy": acc,
+                       **({f"w_{n}": w for n, w in learned.weights().items()}
+                          if learned is not None else {}),
                        "gpu_peak_gb": round(peak_gb, 2)})
         logger.info(f"epoch {epoch}: valid in-batch accuracy {acc:.5f}")
 
@@ -388,6 +419,7 @@ def main():
             "biencoder": biencoder.state_dict(),
             "graph_module": graph_module.state_dict() if joint else None,
             "fusion": fusion.state_dict() if fusion is not None else None,
+            "loss_weighting": learned.state_dict() if learned is not None else None,
             "epoch": epoch,
         }
         torch.save(state, os.path.join(run_dir, f"epoch_{epoch}.pt"))

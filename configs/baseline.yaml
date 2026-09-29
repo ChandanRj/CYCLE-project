@@ -58,6 +58,8 @@ loss:
   a: 1.0                 # only L_e is optimized in the two-stage setup
   b: 0.0
   c: 0.0
+  weighting: fixed       # fixed | learned (see paper.yaml)
+  weighting_lr: 0.01     # learned only: LR for the log-sigma parameters
 
 train:
   batch_size: 16

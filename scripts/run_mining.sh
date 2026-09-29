@@ -4,6 +4,7 @@
 #   extranneg         random negatives + dot product (paper loss; seed 52313 exists)
 #   extranneg_cos     random negatives + cosine InfoNCE
 #   extranneg_hardcos hard-mined negatives + cosine InfoNCE
+#   extranneg_cos_learned  random negatives + cosine, learned uncertainty loss weights
 # Same staging/queue pattern as run_candidate.sh. Evaluation uses
 # --unmapped-adjustment mean; each run also gets a collapse measurement.
 # OUT_ROOT (default outputs) holds staging and finished runs; when it is
@@ -30,6 +31,7 @@ run() {  # run ARM SEED
     extranneg)         ;;
     extranneg_cos)     EXTRA=(--set graph.similarity=cosine) ;;
     extranneg_hardcos) EXTRA=(--set graph.similarity=cosine --set graph.negative_mining=hard) ;;
+    extranneg_cos_learned) EXTRA=(--set graph.similarity=cosine --set loss.weighting=learned) ;;
     *) echo "unknown arm $ARM" >&2; return 1 ;;
   esac
   local NAME="paper_candidate_${ARM}_seed${SEED}"

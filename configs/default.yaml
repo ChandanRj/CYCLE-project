@@ -50,6 +50,8 @@ loss:
   a: 1.0
   b: 1.0
   c: 1.0
+  weighting: fixed           # fixed | learned (see paper.yaml)
+  weighting_lr: 0.01         # learned only: LR for the log-sigma parameters
 
 train:
   batch_size: 64             # ablation: 16 -> 64 is a large win (more in-batch negatives)

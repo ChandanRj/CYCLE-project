@@ -56,6 +56,8 @@ loss:
   a: 1.0                     # Eq. 15 weights (paper: unspecified)
   b: 1.0
   c: 1.0
+  weighting: fixed           # extension: fixed (Eq. 15) | learned (Kendall et al. 2018 uncertainty weights, start exactly at a/b/c)
+  weighting_lr: 0.01         # learned only: LR for the log-sigma parameters
 
 train:
   batch_size: 16
