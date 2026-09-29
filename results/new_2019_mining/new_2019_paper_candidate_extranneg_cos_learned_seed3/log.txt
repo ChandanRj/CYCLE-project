@@ -1,0 +1,19 @@
+19:19:39 INFO run dir: /DATA/kmpooja/cycle_outputs/_staging_paper_candidate_extranneg_cos_learned_seed3/new_2019_paper_seed3
+19:19:42 INFO train samples: 1024, valid samples: 256
+19:19:44 INFO Per-year graph 2019: 10373 nodes, 16 cross-year positives, 0 negatives (vs 2018)
+19:19:54 INFO epoch 0: valid in-batch accuracy 0.77344
+19:20:05 INFO epoch 1: valid in-batch accuracy 0.83203
+19:20:18 INFO epoch 2: valid in-batch accuracy 0.86719
+19:20:30 INFO epoch 3: valid in-batch accuracy 0.84766
+19:20:41 INFO epoch 4: valid in-batch accuracy 0.84766
+19:20:50 INFO epoch 5: valid in-batch accuracy 0.85938
+19:20:51 INFO early stopping at epoch 5 (best 2)
+19:20:51 INFO best epoch 2 (valid in-batch acc 0.86719)
+19:22:02 INFO candidate enhancement: 10373/10373 pool entities mapped to train-year graph nodes
+19:22:11 INFO {"train_year": 2019, "entity_set": "new", "config": "paper", "seed": 3, "test_year": 2019, "split": "test", "unmapped_adjustment": "mean", "num_mentions": 48215, "num_entities": 10373, "recall@1": 0.22181893601576272, "recall@2": 0.3148812610183553, "recall@4": 0.4137716478274396, "recall@8": 0.5141968267136783, "recall@16": 0.6126516644197864, "recall@32": 0.7015244218604169, "recall@64": 0.7811262055376957}
+19:22:13 INFO candidate enhancement: 10000/10373 pool entities mapped to train-year graph nodes
+19:22:23 INFO {"train_year": 2019, "entity_set": "new", "config": "paper", "seed": 3, "test_year": 2020, "split": "test", "unmapped_adjustment": "mean", "num_mentions": 48215, "num_entities": 10373, "recall@1": 0.22696256351757751, "recall@2": 0.3188012029451415, "recall@4": 0.41644716374572227, "recall@8": 0.5151094057865809, "recall@16": 0.6129420304884372, "recall@32": 0.700528881053614, "recall@64": 0.7800891838639428}
+19:22:24 INFO candidate enhancement: 10000/10373 pool entities mapped to train-year graph nodes
+19:22:34 INFO {"train_year": 2019, "entity_set": "new", "config": "paper", "seed": 3, "test_year": 2021, "split": "test", "unmapped_adjustment": "mean", "num_mentions": 48215, "num_entities": 10373, "recall@1": 0.22509592450482216, "recall@2": 0.3193404542154931, "recall@4": 0.41648864461267243, "recall@8": 0.5150886653531059, "recall@16": 0.6111790936430571, "recall@32": 0.7011303536243908, "recall@64": 0.7804210307995437}
+19:22:36 INFO candidate enhancement: 10000/10373 pool entities mapped to train-year graph nodes
+19:22:45 INFO {"train_year": 2019, "entity_set": "new", "config": "paper", "seed": 3, "test_year": 2022, "split": "test", "unmapped_adjustment": "mean", "num_mentions": 48215, "num_entities": 10373, "recall@1": 0.22548999274084827, "recall@2": 0.3200248885201701, "recall@4": 0.41845898579280305, "recall@8": 0.5156486570569325, "recall@16": 0.611448719278233, "recall@32": 0.7030384735040962, "recall@64": 0.7822254485118739}

@@ -12,6 +12,7 @@ Goal: reproduce CYCLE (Cross-Year Contrastive Learning in Entity Linking, CIKM 2
 - The debug-scale experiments for train year 2019 are finished (`debug_n=1024`, seed 52313).
 - The candidate-mode drop from 2019 to 2020+ is diagnosed and fixed at evaluation time (finding 5, commit `c92103c`).
 - The graph-embedding collapse is diagnosed, and the cosine / hard-negative-mining arms are run over 3 seeds (finding 6, commit `e0329a7`).
+- Learned (Kendall) loss weighting is implemented and run over 3 seeds (finding 7, commit `a6ef8e6`). It gives no R@1 gain. **Finding 7 shows that checkpoint selection, not the method, drives R@1 differences between runs. This is the most important methodological result of the mining/weighting work and qualifies every R@1 comparison between runs in this file.**
 - **Next step: the writeup.** Experiments are finished; no more runs.
 
 ## 2. Commits on this branch
@@ -26,7 +27,9 @@ Goal: reproduce CYCLE (Cross-Year Contrastive Learning in Entity Linking, CIKM 2
 | `c0361de` | Candidate-mode results after the fix: `mean` rows in `results/new_2019_candidate/*/eval_results.jsonl`, `unmapped_bias_check.jsonl`; this file updated |
 | `9468a62` | Summary chart regenerated with the `--unmapped-adjustment mean` results |
 | `e0329a7` | `graph.similarity {dot,cosine}` and `graph.negative_mining {random,hard}` (defaults `dot`/`random`, i.e. the paper loss); `scripts/check_embedding_collapse.py`; `scripts/run_mining.sh` (finding 6) |
-| (this commit) | Finding 6 documented; mining/similarity run outputs and collapse metrics in `results/new_2019_mining/` |
+| `b08ca3a` | Finding 6 documented; mining/similarity run outputs and collapse metrics in `results/new_2019_mining/` |
+| `a6ef8e6` | `loss.weighting {fixed,learned}` + `loss.weighting_lr` (default `fixed`); `src/cycle/models/loss_weighting.py`; `extranneg_cos_learned` arm in `scripts/run_mining.sh` |
+| (this commit) | Finding 7 documented; learned-weighting run outputs and `checkpoint_selection.jsonl` in `results/new_2019_mining/` |
 
 ## 3. Code map
 
@@ -35,6 +38,7 @@ Goal: reproduce CYCLE (Cross-Year Contrastive Learning in Entity Linking, CIKM 2
 | `src/cycle/models/biencoder.py` | Two BERT towers. The attribute must be named `bert_model` because `optim.py` matches `bert_model.encoder.layer` for differential LR. `CYCLE_BERT_PATH` env var overrides the model path. |
 | `src/cycle/models/fusion.py` | `ScoreFusion`: additive tanh-gated fusion. Must keep the name `.linear` because `evaluate.py` reassigns it. `learned` projection is zero-init; `random_frozen` is random and frozen. `qid` or `sequential` alignment. |
 | `src/cycle/models/graph_paper.py` | `PaperGraphModule`: GAT attention (Eq. 6/7), shared MLP (Eq. 8/9), L_f (Eq. 13), L_r (Eq. 14). Call `resample_neighbors()` once per epoch. |
+| `src/cycle/models/loss_weighting.py` | `UncertaintyWeighting` (Kendall et al. 2018), used when `loss.weighting=learned`. log σ_i = s0_i + δ_i with δ_i learned from 0, so effective weights start at exactly a/b/c. Its parameter group is excluded from gradient clipping. |
 | `src/cycle/models/heco.py` | HeCo, used only by `baseline.yaml`. Output is cached in `data/processed/cache/heco_*.pt`. |
 
 ### Design decisions (settled, don't re-derive)
@@ -48,7 +52,7 @@ Goal: reproduce CYCLE (Cross-Year Contrastive Learning in Entity Linking, CIKM 2
 
 1. **The Eq. 11 cross-year negatives are always 0 on GCL-TempEL.** This comes from the data, not a bug. Each year has 10373 nodes: 10000 shared entities plus 373 year-specific ones. The 5007 edges among the shared entities are identical in every year, and every added or removed edge touches a year-specific entity. As a result, L_f = 0 exactly, with zero gradient. From 2020→21 onward there are no positives either. `scripts/diag_negatives.py` reproduces this. Deviation: `graph.relation_extra_negatives=K` adds sampled negatives to L_f.
 2. **The main results are bi-encoder-only at test time.** With `fusion.mode=gold_mention` (the default), `evaluate.py` never applies the graph. The graph only affects BERT indirectly, through the fused training loss.
-3. **Candidate-mode fusion** (with the finding-5 fix, `--unmapped-adjustment mean`): the paper-strict version is *worse* than the text-only control (R@1 ≈ 0.22 vs ≈ 0.25 in every test year). With extra negatives it beats the control (≈ 0.28) and roughly matches the gold_mention runs (0.280–0.282 vs 0.279–0.286), but does not clearly exceed them. So test-time graph fusion adds little on top of what the graph already contributes through training.
+3. **Candidate-mode fusion** (with the finding-5 fix, `--unmapped-adjustment mean`; qualified by finding 7, since the R@1 ordering below follows the runs' chosen epochs, 2 < 4 < 7 < 8–9): the paper-strict version is *worse* than the text-only control (R@1 ≈ 0.22 vs ≈ 0.25 in every test year). With extra negatives it beats the control (≈ 0.28) and roughly matches the gold_mention runs (0.280–0.282 vs 0.279–0.286), but does not clearly exceed them. So test-time graph fusion adds little on top of what the graph already contributes through training.
 4. **Continual loss_e reaches about 0.01, which means memorization.** Report this plainly.
 5. **Entities absent from the train-year graph break candidate-mode evaluation.** The paper does not say how to score entities that appear after the training year. In test 2020–22, 373/10373 pool entities have no 2019-graph node, and `enhance_pool` gave them a zero adjustment, which never occurs in training. They then took the top-1 slot far above their 3.6% fair share: 35.7% of mentions for paper-strict (whose adjustment lowers mapped scores by 5.3 on average) and 11.5% with extra negatives, against 3.3–3.4% with no adjustment at all. Giving them the mean adjustment of mapped entities (`--unmapped-adjustment mean`) brings the rate to 3.2–3.7% (matching the no-adjustment control) and removes the 2019→2020+ drop. Test 2019 (all entities mapped) is bit-identical. `scripts/check_unmapped_bias.py` reproduces this; output in `results/new_2019_candidate/unmapped_bias_check.jsonl`.
 6. **The paper's dot-product graph embeddings collapse, and neither cosine similarity nor hard-negative mining raises R@1.** Setting: candidate mode, extra negatives=8, train 2019, 3 seeds per arm (tables in §5). Four points:
@@ -58,8 +62,43 @@ Goal: reproduce CYCLE (Cross-Year Contrastive Learning in Entity Linking, CIKM 2
    4. *Hard-negative mining (on top of cosine) has a measurable effect on the loss and none on R@1.* L_f stays at 1.5–1.85 instead of falling to about 0.9–1.0 with random negatives, since the negatives are now the hardest ones (negative cosine ≈ 0 instead of −0.6 to −0.7). R@1 per seed is 0.299 / 0.275 / 0.224, the same pattern and spread as dot. A likely reason: L_f only touches 12 of the 10373 anchor nodes on the 2019 graph (16 positive pairs), so how its negatives are picked barely reaches the rest of the model.
 
    **Checkpoint-selection noise, not the choice of negatives or similarity, dominates the seed-to-seed spread** (this is the issue flagged earlier as option 3). The best epoch is picked by in-batch accuracy on `valid_n=256` mentions, where one mention is 0.39 points and, near the best epoch, consecutive epochs differ by 1–4 mentions. That signal does not track test R@1: seed 3 early-stopped at epoch 2 in both the dot and hard arms (validation 0.883 and 0.871, the highest or near-highest of those runs) and landed at the lowest test R@1 (0.215, 0.224). With cosine + random, seed 3 picked epoch 5 and reached 0.271. The seed-3 drop (5–7 points) is far larger than any difference between arm means (1–2 points). **With 3 seeds under this validation setup, 1–2 point differences between arms cannot be resolved.** Resolving them would take a larger validation set or a fixed epoch budget first, then more seeds.
+   The between-arm R@1 comparisons in this finding are further qualified by finding 7; the collapse metrics are not.
    `scripts/check_embedding_collapse.py` reproduces the collapse metrics (`--init` for the untrained module); outputs are in `results/new_2019_mining/`.
 
+7. **Learned loss weighting gives no R@1 gain. Checkpoint selection, not the method, drives R@1 across the whole mining/weighting batch. This is the most important methodological finding of that investigation.**
+   *Setup.* This replaces the fixed Eq. 15 weights with Kendall et al. (2018) uncertainty weights, L = Σ_i L_i/(2σ_i²) + log σ_i (`loss.weighting=learned`, `weighting_lr=0.01`). The effective weights start at exactly a = b = c = 1. Arm: random + cosine, extra negatives=8, candidate mode, 3 seeds, compared with the existing random + cosine seeds as the fixed-weight arm. Regression runs (run by hand, not committed as tests) were bit-exact: the fixed path reproduces the committed `extranneg_cos_seed52313` log, and `weighting_lr=0` reproduces the fixed run, logs and all 276 checkpoint tensors included.
+
+   *The learned weights follow loss size, not noise.* Numbers are from epochs ≥ 2, over 3 seeds:
+
+   | Term | Trajectory (start 1.0) | End weight | Mean loss | 1/(2·loss) | Step-to-step CV |
+   |---|---|---|---|---|---|
+   | L_e | dips to 0.65, then rises every epoch | 0.67–0.74 | 0.50 | 0.9–1.0 | 0.59 (noisiest) |
+   | L_f | down, flat from epoch 1 | 0.52–0.54 | 0.94 | 0.53 (w·2L = 0.97–0.99) | 0.12 |
+   | L_r | down every epoch | 0.09–0.12 | 7.45 | 0.067 | 0.01 (least noisy) |
+
+   The weight order e > f > r matches the loss-size order and is the reverse of the noise order. L_f sits at its magnitude equilibrium; it is not weighted down further for its noise or for having only 12 anchors. L_e and L_r are still moving toward 1/(2L) when the learning rate decays to 0. This is expected: the objective's stationary point is σ_i² = E[L_i], whatever the variance. So the mechanism reacts to raw loss size and does not compensate for L_f's sparsity.
+
+   *R@1 (mean over test 2019–22):* learned 0.299 / 0.279 / 0.225 (mean 0.268 ± 0.038, range 7.4 points) vs fixed 0.277 / 0.284 / 0.271 (mean 0.277 ± 0.006, range 1.3 points). No improvement: per seed +2.1, −0.5, −4.6 points, and seed 3 again early-stopped at epoch 2.
+
+   *Checkpoint selection dominates.* Over all 12 runs of the batch (4 arms × 3 seeds, table in §5), **the chosen best epoch correlates with test R@1 at Pearson r = 0.97** (r² = 0.94; Spearman 0.91). R@1 rises by about 1.0 point per epoch of the chosen checkpoint. For comparison:
+   - the arm accounts for 6% of the R@1 variance, the seed for 75%;
+   - the selection criterion itself (in-batch accuracy on `valid_n=256`) correlates only 0.41 with test R@1.
+   Every epoch-2 run scores 0.215–0.225, whichever arm it belongs to, and both epoch-9 runs score 0.299. Seed 3 early-stops at epoch 2 in 3 of 4 arms, so the seed acts mainly through where the noisy validation curve happens to peak. Tie handling adds to this: `acc > best_acc` keeps the earliest of tied epochs, and ties are common at 1/256 resolution; this changed the pick in 2 of the 12 runs (dot seed 52313: 0.883 at epochs 7–9, epoch 7 kept; hard + cosine seed 52313: 0.887 at epochs 9 and 11, epoch 9 kept). This is a correlation over 12 runs, not a controlled test. The direct test would be to evaluate every run at a fixed epoch budget, which has not been done.
+
+   **What this qualifies, retroactively.** Under this validation setup (early stopping, patience 3, on 256 validation mentions), a 1–2 point R@1 difference between two runs cannot be attributed to the method that differs between them. That applies to every R@1 comparison between runs in this file:
+   - finding 6: dot vs cosine vs hard mining;
+   - finding 7: fixed vs learned weights;
+   - §5: extra negatives vs v2 (+0.3 points, epochs 9 vs 8);
+   - finding 3: paper-strict candidate 0.219 (epoch 2) < text-only control 0.246 (epoch 4) < candidate + extra negatives 0.280 (epoch 7) ≈ gold_mention 0.279–0.286 (epochs 8–9). This ordering follows the chosen epochs exactly;
+   - v1 vs v2 (0.195 at epoch 1 with `valid_n=64`, vs 0.28 at epoch 8), which was already attributed to validation.
+
+   Not affected, because they are not R@1 comparisons between runs:
+   - findings 1 and 2: a data property and a code path;
+   - finding 4: training loss;
+   - finding 5: two scoring rules on the same checkpoint;
+   - finding 6's collapse metrics: embedding geometry, consistent across all seeds.
+
+   Fixing this needs a larger validation set, a fixed epoch budget (or evaluating a fixed last epoch), then more seeds. Data: `results/new_2019_mining/checkpoint_selection.jsonl` (arm, seed, chosen epoch, per-epoch validation accuracy, R@1) and the per-run folders.
 ## 5. Results (train year 2019, new entities unless noted, debug_n=1024, seed 52313, R@1)
 
 Each test year has 48215 mentions and 10373 entities.
@@ -100,11 +139,32 @@ Collapse metrics (`collapse.json` per run; ranges over the 3 seeds; "init" is th
 | L_f negative: \|z_r\| / cos to anchor | 0.57 / 1.000 | 4.14–5.26 / 1.000 | 0.15–0.20 / −0.61 to −0.73 | 0.12–0.17 / −0.02 to 0.05 |
 | L_f per-epoch mean after epoch 0 | — | 0.3–1.3 | 0.9–1.1 | 1.5–1.85 |
 
+### Pooled checkpoint selection (finding 7)
+
+Same setup as above. The learned-weights arm uses `loss.weighting=learned`, `weighting_lr=0.01`. Rows are sorted by chosen epoch.
+
+| Arm | Seed | Chosen epoch | Epochs run | Best valid acc | R@1 (mean 2019–22) |
+|---|---|---|---|---|---|
+| random + dot | 3 | 2 | 6 | 0.883 | 0.215 |
+| hard + cosine | 3 | 2 | 6 | 0.871 | 0.224 |
+| random + cosine, learned weights | 3 | 2 | 6 | 0.867 | 0.225 |
+| random + cosine | 3 | 5 | 9 | 0.867 | 0.271 |
+| hard + cosine | 2 | 7 | 11 | 0.871 | 0.275 |
+| random + cosine | 52313 | 7 | 11 | 0.887 | 0.277 |
+| random + dot | 52313 | 7 | 11 | 0.883 | 0.281 |
+| random + dot | 2 | 8 | 12 | 0.871 | 0.277 |
+| random + cosine, learned weights | 2 | 8 | 12 | 0.879 | 0.279 |
+| random + cosine | 2 | 8 | 12 | 0.875 | 0.284 |
+| random + cosine, learned weights | 52313 | 9 | 12 | 0.887 | 0.299 |
+| hard + cosine | 52313 | 9 | 12 | 0.887 | 0.299 |
+
+Pearson r(chosen epoch, R@1) = **0.97** (r² = 0.94), n = 12. Arm share of the variance is 6%, seed share 75%. r(best validation accuracy, R@1) = 0.41.
+
 The extra-negatives gain over v2 is +0.3 points from a single seed, so it is not significant. The candidate-run outputs (config, metrics, eval, log) are also stored in `results/new_2019_candidate/`. The chart is at `results/summary_chart.png` (text-only control, paper-strict and paper + extra negatives in candidate mode with `--unmapped-adjustment mean`, and continual + extra negatives; regenerate with `python scripts/summary_chart.py`, which needs matplotlib).
 
 ## 6. Open questions / possible next work
 - ~~Candidate-mode R@1 drops from 2019 to 2020+~~ — resolved, see finding 5.
-- Multiple seeds would show whether the small differences are real. For the similarity/mining arms (finding 6), 3 seeds are not enough under the current checkpoint selection; fix the validation setup first (larger `valid_n` or a fixed epoch budget).
+- Multiple seeds would show whether the small differences are real. For the similarity/mining arms (finding 6), 3 seeds are not enough under the current checkpoint selection; fix the validation setup first (larger `valid_n` or a fixed epoch budget). **Finding 7 makes this the top open item:** re-evaluating all 12 batch runs (and the §5 single-seed runs) at a fixed epoch would test the checkpoint-selection explanation directly.
 - Full-scale runs (no `debug_n`) and other train years have not been run. Note that train years 2021 and 2022 give L_f no signal.
 
 ## 7. Environment & how to run
@@ -122,6 +182,7 @@ bash scripts/run_candidate.sh              # reproduces the candidate-mode runs
 bash scripts/evaluate.sh <run_dir> 2019,2020,2021,2022 --unmapped-adjustment mean   # candidate mode, finding-5 fix
 OUT_ROOT=/DATA/kmpooja/cycle_outputs bash scripts/run_mining.sh extranneg_cos:2 extranneg_hardcos:3   # finding 6 arms; OUT_ROOT keeps checkpoints off /home (it filled up once)
 $PYTHON scripts/check_embedding_collapse.py --run-dir <run_dir> [--init]
+OUT_ROOT=/DATA/kmpooja/cycle_outputs bash scripts/run_mining.sh extranneg_cos_learned:52313   # finding 7 (learned loss weights)
 $PYTHON scripts/check_unmapped_bias.py --run-dir <run_dir> --test-years 2020 --unmapped-adjustment zero
 ```
 
