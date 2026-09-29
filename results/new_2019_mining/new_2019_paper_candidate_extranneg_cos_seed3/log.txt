@@ -1,0 +1,22 @@
+17:22:07 INFO run dir: outputs/_staging_paper_candidate_extranneg_cos_seed3/new_2019_paper_seed3
+17:22:16 INFO train samples: 1024, valid samples: 256
+17:22:17 INFO Per-year graph 2019: 10373 nodes, 16 cross-year positives, 0 negatives (vs 2018)
+17:22:28 INFO epoch 0: valid in-batch accuracy 0.77344
+17:22:39 INFO epoch 1: valid in-batch accuracy 0.83594
+17:22:50 INFO epoch 2: valid in-batch accuracy 0.85938
+17:23:00 INFO epoch 3: valid in-batch accuracy 0.85156
+17:23:10 INFO epoch 4: valid in-batch accuracy 0.85547
+17:23:21 INFO epoch 5: valid in-batch accuracy 0.86719
+17:23:32 INFO epoch 6: valid in-batch accuracy 0.84766
+17:23:42 INFO epoch 7: valid in-batch accuracy 0.85938
+17:23:52 INFO epoch 8: valid in-batch accuracy 0.86328
+17:23:53 INFO early stopping at epoch 8 (best 5)
+17:23:53 INFO best epoch 5 (valid in-batch acc 0.86719)
+17:24:34 INFO candidate enhancement: 10373/10373 pool entities mapped to train-year graph nodes
+17:24:43 INFO {"train_year": 2019, "entity_set": "new", "config": "paper", "seed": 3, "test_year": 2019, "split": "test", "unmapped_adjustment": "mean", "num_mentions": 48215, "num_entities": 10373, "recall@1": 0.27020636731307685, "recall@2": 0.37090117183449134, "recall@4": 0.47037229078087733, "recall@8": 0.5663590169034532, "recall@16": 0.6538006844343047, "recall@32": 0.731846935600954, "recall@64": 0.7991081613605724}
+17:24:45 INFO candidate enhancement: 10000/10373 pool entities mapped to train-year graph nodes
+17:24:54 INFO {"train_year": 2019, "entity_set": "new", "config": "paper", "seed": 3, "test_year": 2020, "split": "test", "unmapped_adjustment": "mean", "num_mentions": 48215, "num_entities": 10373, "recall@1": 0.2732137301669605, "recall@2": 0.3716270870061184, "recall@4": 0.47091154205122887, "recall@8": 0.5655501399979259, "recall@16": 0.6526184797262263, "recall@32": 0.7303951052576999, "recall@64": 0.79651560717619}
+17:24:56 INFO candidate enhancement: 10000/10373 pool entities mapped to train-year graph nodes
+17:25:06 INFO {"train_year": 2019, "entity_set": "new", "config": "paper", "seed": 3, "test_year": 2021, "split": "test", "unmapped_adjustment": "mean", "num_mentions": 48215, "num_entities": 10373, "recall@1": 0.2700197034118013, "recall@2": 0.36955304365861247, "recall@4": 0.46726122575961837, "recall@8": 0.5637872031525459, "recall@16": 0.6526392201597013, "recall@32": 0.7309136160945764, "recall@64": 0.7974489266825676}
+17:25:07 INFO candidate enhancement: 10000/10373 pool entities mapped to train-year graph nodes
+17:25:17 INFO {"train_year": 2019, "entity_set": "new", "config": "paper", "seed": 3, "test_year": 2022, "split": "test", "unmapped_adjustment": "mean", "num_mentions": 48215, "num_entities": 10373, "recall@1": 0.27091154205122886, "recall@2": 0.3685575028518096, "recall@4": 0.4684226900342217, "recall@8": 0.5640153479207716, "recall@16": 0.6538836461682049, "recall@32": 0.7318884164679041, "recall@64": 0.8008088769055274}
