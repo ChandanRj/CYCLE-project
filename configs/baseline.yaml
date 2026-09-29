@@ -23,6 +23,7 @@ data:
   max_cand_length: 128
   candidate_include_title: false   # eval pool encodes descriptions only, no titles
   debug_n: null
+  valid_n: null          # cap on the validation set; null = same as debug_n
 
 model:
   bert_model: google/bert_uncased_L-8_H-512_A-8
@@ -49,6 +50,7 @@ fusion:
   enabled: true
   projection: random_frozen
   alignment: sequential
+  mode: gold_mention     # graph term on in-batch scores only; no test-time effect
   weight: 45             # fixed fusion weight for this setup
   source: rel            # HeCo get_embeds() returns the meta-path (GCN) view
 

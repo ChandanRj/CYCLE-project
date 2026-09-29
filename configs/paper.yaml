@@ -23,6 +23,7 @@ data:
   max_cand_length: 128
   candidate_include_title: true    # Eq. 2: candidates are title [ENT] description
   debug_n: null
+  valid_n: null          # cap on the validation set; null = same as debug_n
 
 model:
   bert_model: google/bert_uncased_L-8_H-512_A-8
@@ -45,6 +46,7 @@ fusion:
   enabled: true              # the paper does not specify how graph embeddings
   projection: learned        # reach the EL scores; we use an additive
   alignment: qid             # tanh-fusion, QID-aligned and trained
+  mode: gold_mention         # gold_mention: graph term on in-batch scores (train only) | candidate: y_e + P·z_e on the full pool, train and test
   weight: 45
   source: mean               # fuse (z_r + z_f)/2
 

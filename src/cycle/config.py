@@ -24,11 +24,11 @@ class Config(dict):
         return obj
 
 
-def load_config(path, overrides=None):
+def load_config(path, overrides=None, must_exist=False):
     """Load a YAML config file and apply ``key.subkey=value`` overrides."""
     with open(path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
-    return Config.wrap(apply_overrides(cfg, overrides))
+    return Config.wrap(apply_overrides(cfg, overrides, must_exist))
 
 
 def apply_overrides(cfg, overrides, must_exist=False):

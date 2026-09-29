@@ -217,7 +217,7 @@ def main():
                         help="Config override, e.g. data.train_year=2020")
     args = parser.parse_args()
 
-    cfg = load_config(args.config, args.overrides)
+    cfg = load_config(args.config, args.overrides, must_exist=True)
     cfg.run["config_name"] = os.path.splitext(os.path.basename(args.config))[0]
     run_dir = make_run_dir(cfg)
     logger = get_logger(run_dir)
