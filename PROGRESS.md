@@ -18,7 +18,7 @@ Goal: reproduce CYCLE (Cross-Year Contrastive Learning in Entity Linking, CIKM 2
 | Commit | What |
 |---|---|
 | `e066de6` | Model files (BiEncoder, ScoreFusion, PaperGraphModule, HeCo) for paper Eq. 1–15; `graph.relation_extra_negatives` extension; `--set` override flag; `config.apply_overrides`; `evaluate.py` infers the fusion bias from the checkpoint; `.gitignore` `models/` rule anchored to the repo root |
-| `c9efe09` | `scripts/diag_negatives.py` (Eq. 11 zero-negatives diagnostic), `scripts/summary_chart.py` (writes `outputs/summary_chart.png`) |
+| `c9efe09` | `scripts/diag_negatives.py` (Eq. 11 zero-negatives diagnostic), `scripts/summary_chart.py` (chart; now writes `results/summary_chart.png`) |
 | `6e248bd` | Candidate-mode fusion experiments: `scripts/run_candidate.sh`, `scripts/gpu_queue.sh`, results in `results/new_2019_candidate/` |
 
 | `000cb57` | Explicit `data.valid_n: null` and `fusion.mode: gold_mention` in both configs; `train.py` rejects unknown `--set` keys (previously `model.relation_extra_negatives` was silently accepted; the correct key is `graph.relation_extra_negatives`). `evaluate.py` already rejected them. Adds this file. |
@@ -66,7 +66,7 @@ Each test year has 48215 mentions and 10373 entities.
 | ″ | same checkpoint, `--unmapped-adjustment mean` | 0.280 | 0.280–0.282 |
 | `new_2015_paper_seed52313` | early debug run, best ep 0 | 0.093 (2015) | ~0.093 (2016–18) |
 
-The extra-negatives gain over v2 is +0.3 points from a single seed, so it is not significant. The candidate-run outputs (config, metrics, eval, log) are also stored in `results/new_2019_candidate/`. The chart is at `outputs/summary_chart.png`.
+The extra-negatives gain over v2 is +0.3 points from a single seed, so it is not significant. The candidate-run outputs (config, metrics, eval, log) are also stored in `results/new_2019_candidate/`. The chart is at `results/summary_chart.png` (text-only control, paper-strict and paper + extra negatives in candidate mode with `--unmapped-adjustment mean`, and continual + extra negatives; regenerate with `python scripts/summary_chart.py`, which needs matplotlib).
 
 ## 6. Open questions / possible next work
 - ~~Candidate-mode R@1 drops from 2019 to 2020+~~ — resolved, see finding 5.
