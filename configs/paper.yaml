@@ -41,6 +41,8 @@ graph:
   isolated_fallback: self    # nodes with no relation edges keep own features
   feature_negatives: all       # Eq. 14: N_f = all non-neighbors (chunked)
   relation_extra_negatives: 0  # Eq. 11 negatives are empty in GCL-TempEL; >0 samples extra L_f denominators
+  negative_mining: random      # extension: random | hard (top-K most similar non-neighbors, L_f only)
+  similarity: dot              # extension: dot (paper) | cosine (normalised InfoNCE)
 
 fusion:
   enabled: true              # the paper does not specify how graph embeddings

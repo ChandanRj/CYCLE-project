@@ -102,6 +102,8 @@ def build_graph_state(cfg, device, logger):
         isolated_fallback=g.isolated_fallback,
         feature_negatives=g.feature_negatives,
         relation_extra_negatives=g.get("relation_extra_negatives", 0),
+        negative_mining=g.get("negative_mining", "random"),
+        similarity=g.get("similarity", "dot"),
     ).to(device)
     logger.info(
         f"Per-year graph {cfg.data.train_year}: {graph['num_nodes']} nodes, "

@@ -5,7 +5,9 @@ Eq. 8/9  — shared ELU MLP: fc_in (W^1 feat→hidden), fc_out (W^2 hidden→hid
 Eq. 10   — P_i^r = newly added relation edges t-1→t (cross-year positives)
 Eq. 11   — N_i^r = removed relation edges t-1→t (cross-year negatives for L_f);
            EXTENSION: relation_extra_negatives > 0 substitutes sampled relation
-           non-neighbors where N_i^r is empty (always, in GCL-TempEL)
+           non-neighbors where N_i^r is empty (always, in GCL-TempEL);
+           EXTENSION: negative_mining="hard" picks the most similar ones
+           EXTENSION: similarity="cosine" L2-normalises z before both InfoNCE losses
 Eq. 13   — L_f: anchor=z_f, target=z_r, positive=P_i^r, denom=P_i^r ∪ N_i^r
 Eq. 14   — L_r: anchor=z_r, target=z_f, positive=P_i^f (kNN), denom≈all n
 Eq. 15   — joint objective assembled in train.py
@@ -29,6 +31,8 @@ class PaperGraphModule(nn.Module):
         isolated_fallback: str,
         feature_negatives: str,
         relation_extra_negatives: int = 0,
+        negative_mining: str = "random",
+        similarity: str = "dot",
         agg_chunk: int = 1024,
     ):
         super().__init__()
@@ -37,6 +41,8 @@ class PaperGraphModule(nn.Module):
         self.isolated_fallback = isolated_fallback
         self.feature_negatives = feature_negatives
         self.relation_extra_negatives = relation_extra_negatives
+        self.negative_mining = negative_mining  # "random" | "hard" (extension)
+        self.similarity = similarity            # "dot" (paper) | "cosine" (extension)
         self._agg_chunk = agg_chunk  # process this many nodes at a time in _aggregate
 
         # Attention on raw X per Eq. 6/7: a^T [x_i || x_j], x_i ∈ R^feat_dim.
@@ -164,6 +170,34 @@ class PaperGraphModule(nn.Module):
                 return idx
             idx[bad] = torch.randint(n, (int(bad.sum()),), generator=generator)
 
+    @torch.no_grad()
+    def _mine_hard_non_neighbors(
+        self,
+        graph: dict,
+        n: int,
+        R: int,
+        device: torch.device,
+        generator: torch.Generator | None,
+    ) -> torch.Tensor:                # (n, R) device LongTensor
+        """EXTENSION: for anchors with cross-year positives (the only rows
+        L_f uses), the R non-neighbors with the highest cosine(z_f[i], z_r[j])
+        under the current weights. Other rows keep the random draw, which is
+        taken first so the RNG stream matches negative_mining="random".
+        """
+        idx = self._sample_relation_non_neighbors(graph, n, R, generator).to(device)
+        if self._pos_mask is None:
+            return idx
+        rows = self._pos_mask.any(dim=1).nonzero().squeeze(1)
+        was_training = self.training
+        self.eval()                   # no dropout: no RNG use, deterministic ranking
+        z_r, z_f = self(graph)
+        self.train(was_training)
+        sim = F.normalize(z_f[rows], dim=1) @ F.normalize(z_r, dim=1).t()   # (m, n)
+        keys = rows.unsqueeze(1) * n + torch.arange(n, device=device)
+        sim[torch.isin(keys, self._rel_forbidden.to(device))] = float("-inf")
+        idx[rows] = sim.topk(R, dim=1).indices
+        return idx
+
     def resample_neighbors(
         self,
         graph: dict,
@@ -195,7 +229,10 @@ class PaperGraphModule(nn.Module):
             # negatives sampled from non-neighbors, mirroring the paper's own
             # N_i^f definition for the feature graph (Sec 5.3).
             # Used only for nodes whose strict N_i^r is empty.
-            extra = self._sample_relation_non_neighbors(graph, n, R, generator).to(device)
+            if self.negative_mining == "hard":
+                extra = self._mine_hard_non_neighbors(graph, n, R, device, generator)
+            else:
+                extra = self._sample_relation_non_neighbors(graph, n, R, generator).to(device)
             if self._neg_idx is None:
                 self._neg_idx = extra
                 self._neg_mask = torch.ones(n, R, dtype=torch.bool, device=device)
@@ -360,6 +397,13 @@ class PaperGraphModule(nn.Module):
         per_node = -(log_num - log_den)
         return per_node[knn_mask.any(dim=1)].mean()
 
+    def _sim_inputs(self, a: torch.Tensor, b: torch.Tensor):
+        """Cosine mode compares directions only, so InfoNCE cannot be lowered
+        by changing vector norms (the dot-product loophole)."""
+        if self.similarity == "cosine":
+            return F.normalize(a, dim=1), F.normalize(b, dim=1)
+        return a, b
+
     def loss_f(self, z_r: torch.Tensor, z_f: torch.Tensor, graph: dict) -> torch.Tensor:
         """L_f: anchor=z_f, target=z_r, positives=P_i^r, denom=P_i^r ∪ N_i^r (Eq. 13).
 
@@ -374,11 +418,13 @@ class PaperGraphModule(nn.Module):
         neg_idx  = self._neg_idx  if self._neg_idx  is not None else self._pos_idx
         neg_mask = (self._neg_mask if self._neg_mask is not None
                     else torch.zeros_like(self._pos_mask))
-        return self._infonce_f(z_f, z_r, self._pos_idx, self._pos_mask, neg_idx, neg_mask)
+        a, t = self._sim_inputs(z_f, z_r)
+        return self._infonce_f(a, t, self._pos_idx, self._pos_mask, neg_idx, neg_mask)
 
     def loss_r(self, z_r: torch.Tensor, z_f: torch.Tensor, graph: dict) -> torch.Tensor:
         """L_r: anchor=z_r, target=z_f, positives=P_i^f (kNN), denom≈all n (Eq. 14)."""
         has_pos = self._knn_mask.any(dim=1)
         if not has_pos.any():       # all nodes isolated in feature graph
             return z_r.sum() * 0
-        return self._infonce_r(z_r, z_f, self._knn_nbrs, self._knn_mask)
+        a, t = self._sim_inputs(z_r, z_f)
+        return self._infonce_r(a, t, self._knn_nbrs, self._knn_mask)
