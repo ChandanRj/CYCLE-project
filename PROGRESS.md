@@ -165,6 +165,7 @@ The extra-negatives gain over v2 is +0.3 points from a single seed, so it is not
 ## 6. Open questions / possible next work
 - ~~Candidate-mode R@1 drops from 2019 to 2020+~~ — resolved, see finding 5.
 - Multiple seeds would show whether the small differences are real. For the similarity/mining arms (finding 6), 3 seeds are not enough under the current checkpoint selection; fix the validation setup first (larger `valid_n` or a fixed epoch budget). **Finding 7 makes this the top open item:** re-evaluating all 12 batch runs (and the §5 single-seed runs) at a fixed epoch would test the checkpoint-selection explanation directly.
+- **Finding 7 controlled test: scoped, not run.** A fully controlled test (re-evaluating all 12 runs at a fixed shared epoch) was scoped but not run: per-epoch checkpoints beyond best.pt and the final epoch are deleted by train.py's cleanup step (lines 436-440), and no single epoch has a saved checkpoint across all 12 runs (3 of 12 runs early-stopped by epoch 5, before epoch 7-8 were ever reached). Running this test would require retraining all 12 configs with checkpoint cleanup and early stopping disabled — estimated ~12 training runs, ~12-24 evaluations, and ~48GB of storage. Given project time constraints, this was left as a scoped future-work item rather than executed; the r=0.97 correlation (n=12) is reported as suggestive, not confirmed, evidence.
 - Full-scale runs (no `debug_n`) and other train years have not been run. Note that train years 2021 and 2022 give L_f no signal.
 
 ## 7. Environment & how to run
