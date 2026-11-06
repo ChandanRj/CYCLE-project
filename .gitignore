@@ -23,3 +23,22 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Large datasets, checkpoints and generated artifacts
+data/
+outputs/
+results/
+graphify-out/
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+*.faiss
+*.zip
+*.tar.gz
+.env
+.env.*
+!.env.example
+*.key
+__pycache__/
