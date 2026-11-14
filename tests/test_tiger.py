@@ -172,3 +172,46 @@ def test_active_terms_on_full_2019_graph_cpu():
                                        rel=1e-5)
     out.backward()
     assert all(p.grad is not None for p in branches.parameters())
+
+
+# --- gradient clipping: TIGER is clipped as its own group --------------------
+
+def _encoder_grads_after_clip(hsic_weight, joint_clip=False):
+    """Main-encoder grads after clipping, on a fixed batch, with TIGER at ``hsic_weight``."""
+    from cycle.train import clip_gradients, split_clip_params
+    torch.manual_seed(0)
+    encoder = torch.nn.Linear(16, 16)                # stands in for the bi-encoder
+    g = torch.Generator().manual_seed(11)
+    ctx, cand = torch.randn(8, 16, generator=g), torch.randn(8, 16, generator=g)
+    loss = F.cross_entropy(encoder(ctx) @ encoder(cand).t(), torch.arange(8))
+    branches = inputs = None
+    groups = [{"params": list(encoder.parameters())}]
+    if hsic_weight > 0:
+        torch.manual_seed(1)
+        branches = TigerBranches(9, 4, 2)
+        n = 12
+        a = (torch.rand(n, n, generator=g) < 0.3).double().triu(1)
+        adj = gcn_normalized_adj(sp.csr_matrix((a + a.t()).numpy()))
+        inputs = {"X": torch.rand(n, 9, generator=g).to_sparse(), "adj_r": adj, "adj_f": adj}
+        groups.append({"params": list(branches.parameters())})
+    loss_cfg = {"shared_consistency_weight": 0.0, "hsic_weight": hsic_weight}
+    loss = add_tiger_terms(loss, loss_cfg, branches, inputs, {})
+    loss.backward()
+    if joint_clip:                                   # the old behaviour, for contrast
+        torch.nn.utils.clip_grad_norm_([p for gr in groups for p in gr["params"]], 1.0)
+    else:
+        main, tiger = split_clip_params(groups, branches)
+        assert len(tiger) == (len(list(branches.parameters())) if branches else 0)
+        clip_gradients(main, tiger, 1.0)
+    if branches is not None:
+        assert all(p.grad is not None and p.grad.abs().sum() > 0 for p in branches.parameters())
+    return [p.grad.clone() for p in encoder.parameters()]
+
+
+def test_tiger_does_not_change_encoder_clipping():
+    off = _encoder_grads_after_clip(0.0)
+    on = _encoder_grads_after_clip(1.0e4)
+    assert all(torch.equal(a, b) for a, b in zip(off, on))
+    # the joint clip used before would have shrunk the encoder grads further
+    joint = _encoder_grads_after_clip(1.0e4, joint_clip=True)
+    assert not all(torch.equal(a, b) for a, b in zip(off, joint))
