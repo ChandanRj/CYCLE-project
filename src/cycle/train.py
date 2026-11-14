@@ -26,6 +26,7 @@ from cycle.models.fusion import ScoreFusion
 from cycle.models.graph_paper import PaperGraphModule
 from cycle.models.heco import HeCo, pretrain_heco
 from cycle.models.loss_weighting import UncertaintyWeighting
+from cycle.models.tiger import add_tiger_terms, build_tiger
 from cycle.optim import build_optimizer, build_scheduler
 from cycle.utils import (MetricsWriter, atomic_torch_save, configure_tf32,
                          get_logger, oom_safe_map, resolve_device,
@@ -268,10 +269,14 @@ def main():
             init_seed=cfg.graph.pretrain.seed if "pretrain" in cfg.graph else 0,
         ).to(device)
 
+    # TIGER ablation (loss.shared_consistency_weight / loss.hsic_weight); both
+    # default to 0, in which case nothing is built and no RNG is consumed
+    tiger_branches, tiger_inputs = build_tiger(cfg, device, logger)
+
     # reseed after graph setup so bi-encoder batches start from the run seed
     set_all_seeds(cfg.run.seed)
 
-    extra_modules = [m for m in (graph_module, fusion) if m is not None]
+    extra_modules = [m for m in (graph_module, fusion, tiger_branches) if m is not None]
     optimizer = build_optimizer(
         biencoder, cfg.train.type_optimization, cfg.train.learning_rate,
         extra_modules=extra_modules, extra_lr=cfg.train.graph_learning_rate,
@@ -377,6 +382,9 @@ def main():
                 loss = loss + weighted
                 extra = {**extra, "loss_reg": loss_reg.item(),
                          **{f"w_{n}": w for n, w in learned.weights().items()}}
+            # fp32, outside autocast, like the graph module; returns `loss`
+            # itself when the TIGER terms are off
+            loss = add_tiger_terms(loss, loss_weights, tiger_branches, tiger_inputs, extra)
 
             scaler.scale(loss if loss_reg is None else loss + loss_reg).backward()
             scaler.unscale_(optimizer)
