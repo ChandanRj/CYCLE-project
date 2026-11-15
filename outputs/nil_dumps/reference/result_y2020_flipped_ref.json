@@ -1,0 +1,38 @@
+{
+  "rule": "NIL if top1 >= threshold (flipped max, post hoc)",
+  "objective": "nil_f1",
+  "threshold": 187.89450825730415,
+  "n_candidates": 513,
+  "val_nil_predictions": 1594,
+  "val": {
+    "inkb_acc": 0.3977812618776131,
+    "unnormalized_acc": 0.39446534493502894,
+    "nil_precision": 0.21706398996235884,
+    "nil_recall": 0.28107229894394803,
+    "nil_f1": 0.24495575221238938,
+    "link_rate": 0.9632100076164978,
+    "num_mentions": 43327,
+    "num_nil_gold": 1231
+  },
+  "test_nil_predictions": 1880,
+  "test": {
+    "inkb_acc": 0.39411953383940984,
+    "unnormalized_acc": 0.3903142175671471,
+    "nil_precision": 0.20638297872340425,
+    "nil_recall": 0.2675862068965517,
+    "nil_f1": 0.23303303303303302,
+    "link_rate": 0.9610079850668879,
+    "num_mentions": 48215,
+    "num_nil_gold": 1450
+  },
+  "test_always_link": {
+    "inkb_acc": 0.40895969207740834,
+    "unnormalized_acc": 0.3966607902105154,
+    "nil_precision": 0.0,
+    "nil_recall": 0.0,
+    "nil_f1": 0.0,
+    "link_rate": 1.0,
+    "num_mentions": 48215,
+    "num_nil_gold": 1450
+  }
+}

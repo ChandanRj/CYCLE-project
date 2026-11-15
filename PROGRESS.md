@@ -1,6 +1,6 @@
 # CYCLE Reproduction — Progress Notes
 
-Last updated: 2026-09-29. Branch: `cycle-implementation`.
+Last updated: 2026-11-15 (§4b added on `nil-and-stats`). Earlier sections: 2026-09-29, branch `cycle-implementation`.
 
 Goal: reproduce CYCLE (Cross-Year Contrastive Learning in Entity Linking, CIKM 2024) on GCL-TempEL and compare recall@k with paper Table 2 (continual: 0.286–0.301, new: 0.184–0.222).
 
@@ -99,6 +99,15 @@ Goal: reproduce CYCLE (Cross-Year Contrastive Learning in Entity Linking, CIKM 2
    - finding 6's collapse metrics: embedding geometry, consistent across all seeds.
 
    Fixing this needs a larger validation set, a fixed epoch budget (or evaluating a fixed last epoch), then more seeds. Data: `results/new_2019_mining/checkpoint_selection.jsonl` (arm, seed, chosen epoch, per-epoch validation accuracy, R@1) and the per-run folders.
+
+## 4b. Graph, temporal-gap and text-only findings (2026-11-15, `default.yaml`, full data)
+
+Setting: `configs/default.yaml` (candidate-mode fusion, new entities, train year 2019, no `debug_n`), five seeds 52313–52317, test split. Baseline numbers are the five-seed runs in `outputs/new_2019_default_seed{S}` (summary in `outputs/seed_protocol/SEED_SUMMARY.md`). Statistics: `cycle.stats.summarize_seeds` (mean, sample SD, 95% percentile bootstrap over seeds). Write-ups live under `outputs/` and are not committed.
+
+8. **The graph does not affect test R@1 at inference (two seeds).** `evaluate.py --set fusion.mode=gold_mention` skips the graph enhancer (`src/cycle/evaluate.py:34`), leaving pure bi-encoder pool encodings. Compared with the same checkpoints under `--unmapped-adjustment mean`, R@1 changes by −0.0002 to +0.0013 (mean +0.0006 over 8 seed-year cells, seeds 52313/52314, 2019–2022), well within the seed SD (~0.003). *Caveats:* two seeds; no per-mention test; removes the graph at inference only, while the bi-encoder was still trained with it. Note that `fusion.mode=gold_mention` does **not** skip the graph in training (`train.py:166–175`). Source: `outputs/graph_inference/GRAPH_INFERENCE.md`.
+9. **Training without the graph gives the same R@1 (five seeds).** Text-only = `--set graph.enabled=false --set fusion.enabled=false` (no graph module, `train.py:76`; no fusion, `train.py:288`; no L_f/L_r). Text-only minus baseline (mean adjustment), same seed: 2019 +0.0029 [−0.0031, +0.0087], 2020 +0.0033 [−0.0023, +0.0086], 2021 +0.0036 [−0.0020, +0.0085], 2022 +0.0042 [−0.0013, +0.0093]. Every CI includes 0, and 3–4 of 5 seeds are positive. Text-only mean R@1 is 0.421–0.425 (SD 0.005–0.006) against 0.418–0.421 (SD 0.002–0.003). Against the zero-adjustment baseline, text-only is +0.056 to +0.062 in 2020–2022, but that is the known zero-adjustment drop (finding 5), not a text-only gain. With finding 8, **the graph as implemented contributes nothing measurable to R@1, neither in training nor at inference.** *Caveats:* five seeds (the bootstrap CI is approximate and likely too narrow); no per-mention test; pairing by seed is only partial (`train.py` reseeds after graph setup, line 304, but the models differ from step 1); text-only varies about twice as much across seeds; one configuration only, with graph embeddings already known to be weak (finding 6), so this says this graph does not help, not that graph information cannot. Source: `outputs/textonly/TEXT_ONLY_5SEED.md` (single-seed precursor: `TEXT_ONLY.md`).
+10. **No temporal degradation under the mean adjustment (five seeds).** Per-seed test R@1 (later year − 2019): 2020 +0.0020 [+0.0011, +0.0032], 2021 +0.0034 [+0.0029, +0.0040], 2022 +0.0018 [+0.0004, +0.0033]. The CIs exclude 0 on the *positive* side, so later years are not worse than 2019. (The planned rule, "no degradation only if every CI includes 0", is not met literally; the verdict follows its intent.) Under the zero adjustment 2020–2022 drop to 0.361–0.369 against 0.418, and that drop comes from the unmapped-entity adjustment (finding 5). *Caveats:* five seed-level scores only, so power is low and the n = 5 CIs are approximate. No per-mention test is possible: per-mention correctness is not saved, and the test sets of different years are partly different mentions (41–54% overlap with 2019 by entity, mention text and context), so "2020 − 2019" compares different samples. The +0.002–0.003 differences are about the seed SD and may reflect sample differences rather than a real gain. Source: `outputs/temporal_gap/TEMPORAL_GAP.md`.
+
 ## 5. Results (train year 2019, new entities unless noted, debug_n=1024, seed 52313, R@1)
 
 Each test year has 48215 mentions and 10373 entities.
