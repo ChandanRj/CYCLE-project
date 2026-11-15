@@ -60,6 +60,12 @@ loss:
   c: 0.0
   weighting: fixed       # fixed | learned (see paper.yaml)
   weighting_lr: 0.01     # learned only: LR for the log-sigma parameters
+  shared_consistency_weight: 0.0  # TIGER ablation, Eq. 9 L_s (TIGER's a); 0 = off
+  hsic_weight: 0.0       # TIGER ablation, Eq. 10-12 L_d (TIGER's b); 0 = off
+
+tiger:                   # read only when a TIGER loss weight above is > 0
+  gcn_layers: 2          # OUR CHOICE: not given in TIGER paper or supplementary
+  hidden_dim: 512        # OUR CHOICE: not given in TIGER paper or supplementary
 
 train:
   batch_size: 16

@@ -26,10 +26,38 @@ from cycle.models.fusion import ScoreFusion
 from cycle.models.graph_paper import PaperGraphModule
 from cycle.models.heco import HeCo, pretrain_heco
 from cycle.models.loss_weighting import UncertaintyWeighting
+from cycle.models.tiger import add_tiger_terms, build_tiger
 from cycle.optim import build_optimizer, build_scheduler
 from cycle.utils import (MetricsWriter, atomic_torch_save, configure_tf32,
                          get_logger, oom_safe_map, resolve_device,
                          set_all_seeds)
+
+
+def split_clip_params(param_groups, tiger_branches):
+    """Split the optimizer's parameters into (main, tiger) clipping groups.
+
+    ``main`` is every parameter in ``param_groups`` that is not a TIGER GCN
+    parameter, in the original order. With ``tiger_branches is None`` (both
+    TIGER weights 0) ``tiger`` is empty and ``main`` is exactly the list the
+    joint clip used before, so clipping is unchanged.
+    """
+    tiger_ids = ({id(p) for p in tiger_branches.parameters()}
+                 if tiger_branches is not None else set())
+    params = [p for g in param_groups for p in g["params"]]
+    main = [p for p in params if id(p) not in tiger_ids]
+    tiger = [p for p in params if id(p) in tiger_ids]
+    return main, tiger
+
+
+def clip_gradients(main_params, tiger_params, max_norm):
+    """Clip the main and TIGER groups independently, each to ``max_norm``.
+
+    The TIGER group is skipped entirely when empty (TIGER off), so the call is
+    then the same single ``clip_grad_norm_`` over ``main_params`` as before.
+    """
+    torch.nn.utils.clip_grad_norm_(main_params, max_norm)
+    if tiger_params:
+        torch.nn.utils.clip_grad_norm_(tiger_params, max_norm)
 
 
 def make_run_dir(cfg):
@@ -268,17 +296,23 @@ def main():
             init_seed=cfg.graph.pretrain.seed if "pretrain" in cfg.graph else 0,
         ).to(device)
 
+    # TIGER ablation (loss.shared_consistency_weight / loss.hsic_weight); both
+    # default to 0, in which case nothing is built and no RNG is consumed
+    tiger_branches, tiger_inputs = build_tiger(cfg, device, logger)
+
     # reseed after graph setup so bi-encoder batches start from the run seed
     set_all_seeds(cfg.run.seed)
 
-    extra_modules = [m for m in (graph_module, fusion) if m is not None]
+    extra_modules = [m for m in (graph_module, fusion, tiger_branches) if m is not None]
     optimizer = build_optimizer(
         biencoder, cfg.train.type_optimization, cfg.train.learning_rate,
         extra_modules=extra_modules, extra_lr=cfg.train.graph_learning_rate,
     )
     # gradient clipping covers the model groups only, so the learned weights'
-    # own gradients never change the model's clip factor
-    clip_params = [p for g_ in optimizer.param_groups for p in g_["params"]]
+    # own gradients never change the model's clip factor; TIGER's GCN
+    # parameters are clipped as a separate group (see split_clip_params)
+    clip_params, tiger_clip_params = split_clip_params(optimizer.param_groups,
+                                                       tiger_branches)
     weighting = cfg.loss.get("weighting", "fixed")
     if weighting not in ("fixed", "learned"):
         raise ValueError(f"loss.weighting must be fixed or learned, got {weighting!r}")
@@ -377,10 +411,13 @@ def main():
                 loss = loss + weighted
                 extra = {**extra, "loss_reg": loss_reg.item(),
                          **{f"w_{n}": w for n, w in learned.weights().items()}}
+            # fp32, outside autocast, like the graph module; returns `loss`
+            # itself when the TIGER terms are off
+            loss = add_tiger_terms(loss, loss_weights, tiger_branches, tiger_inputs, extra)
 
             scaler.scale(loss if loss_reg is None else loss + loss_reg).backward()
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(clip_params, cfg.train.max_grad_norm)
+            clip_gradients(clip_params, tiger_clip_params, cfg.train.max_grad_norm)
             scaler.step(optimizer)
             scaler.update()
             scheduler.step()
